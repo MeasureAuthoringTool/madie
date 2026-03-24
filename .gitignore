@@ -1,0 +1,25 @@
+# Ignore everything by default
+*
+
+# Whitelist the orchestration files
+!.gitignore
+!.github/
+!.github/**
+!AGENTS.md
+!madie.sh
+!setup-madie.sh
+!docker-compose.yml
+!.env.example
+!README.md
+
+# Whitelist data dir but only the init script (not DB volume data)
+!data/
+data/*
+!data/init-mongo.js
+
+# Never track these
+.env
+.madie.pids
+.DS_Store
+logs/
+temp/

@@ -1,0 +1,376 @@
+# docker-compose.yml — MADiE local development stack
+#
+# All services mount source code as volumes so file changes are picked up
+# automatically without restarting containers.
+#
+# Usage:
+#   docker compose up -d --build    # Start everything
+#   docker compose logs -f          # Follow all logs
+#   docker compose down             # Stop everything
+#
+# Or via the CLI:
+#   ./madie.sh start docker up
+#   ./madie.sh start docker down
+
+# ─── Shared configuration anchors ────────────────────────────────────────────
+
+x-java-base: &java-base
+  image: maven:3-eclipse-temurin-17
+  working_dir: /app
+  networks: [madie]
+
+x-java-common-env: &java-common-env
+  OKTA_ISSUER: ${OKTA_ISSUER:-https://your-org.okta.com/oauth2/default}
+  OKTA_CLIENT_ID: ${OKTA_CLIENT_ID:-your-client-id}
+  MAVEN_OPTS: ${MAVEN_OPTS:--Xmx512m}
+  SPRING_DEVTOOLS_RESTART_POLL_INTERVAL: "2000"
+  SPRING_DEVTOOLS_RESTART_QUIET_PERIOD: "1000"
+
+x-mongo-spring-env: &mongo-spring-env
+  SPRING_DATA_MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-root}:${MONGO_INITDB_ROOT_PASSWORD:-E5press0}@mongodb:27017/${MONGO_DB_NAME:-madie}?authSource=admin
+
+x-node-service: &node-service
+  image: node:20-alpine
+  working_dir: /app
+  networks: [madie]
+  environment: &node-env
+    CHOKIDAR_USEPOLLING: "true"
+    WATCHPACK_POLLING: "true"
+
+services:
+  # ─── Infrastructure ───────────────────────────────────────────────────────
+
+  mongodb:
+    image: mongo:6.0
+    container_name: madie-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-E5press0}
+      MONGO_INITDB_DATABASE: admin
+    volumes:
+      - ./data/mongodb:/data/db
+      - ./data/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      madie:
+        aliases:
+          - madie-mongo
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ─── Single-SPA Frontends ─────────────────────────────────────────────────
+
+  madie-root:
+    <<: *node-service
+    container_name: madie-root
+    ports:
+      - "${MADIE_ROOT_PORT:-9000}:${MADIE_ROOT_PORT:-9000}"
+    volumes:
+      - ./frontends/madie-root:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:${MADIE_ROOT_PORT:-9000}/env-config/serviceConfig.json || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  madie-layout:
+    <<: *node-service
+    container_name: madie-layout
+    ports:
+      - "${MADIE_LAYOUT_PORT:-8500}:${MADIE_LAYOUT_PORT:-8500}"
+    volumes:
+      - ./frontends/madie-layout:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+
+  madie-auth:
+    <<: *node-service
+    container_name: madie-auth
+    ports:
+      - "${MADIE_AUTH_PORT:-8502}:${MADIE_AUTH_PORT:-8502}"
+    volumes:
+      - ./frontends/madie-auth:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+
+  madie-editor:
+    <<: *node-service
+    container_name: madie-editor
+    ports:
+      - "${MADIE_EDITOR_PORT:-8501}:${MADIE_EDITOR_PORT:-8501}"
+    volumes:
+      - ./frontends/madie-editor:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+
+  madie-measure:
+    <<: *node-service
+    container_name: madie-measure
+    ports:
+      - "${MADIE_MEASURE_PORT:-8505}:${MADIE_MEASURE_PORT:-8505}"
+    volumes:
+      - ./frontends/madie-measure:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+
+  madie-cql-library:
+    <<: *node-service
+    container_name: madie-cql-library
+    ports:
+      - "${MADIE_CQL_LIBRARY_PORT:-8507}:${MADIE_CQL_LIBRARY_PORT:-8507}"
+    volumes:
+      - ./frontends/madie-cql-library:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+
+  madie-util:
+    <<: *node-service
+    container_name: madie-util
+    ports:
+      - "${MADIE_UTIL_PORT:-8508}:${MADIE_UTIL_PORT:-8508}"
+    volumes:
+      - ./frontends/madie-util:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm start"
+
+  # ─── Java Microservices ────────────────────────────────────────────────────
+
+  measure-service:
+    <<: *java-base
+    container_name: madie-measure-service
+    ports:
+      - "${MEASURE_SERVICE_PORT:-8080}:${MEASURE_SERVICE_PORT:-8080}"
+    volumes:
+      - ./services/measure-service:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      madie-qdm-elm-translation:
+        condition: service_started
+      madie-fhir-elm-translator:
+        condition: service_started
+      madie-fhir-service:
+        condition: service_started
+      madie-root:
+        condition: service_healthy
+    environment:
+      <<: [*java-common-env, *mongo-spring-env]
+      FORCE_VIRUS_SCAN: ${FORCE_VIRUS_SCAN:-true}
+      QDM_ELM_TRANSLATOR_SERVICE_URL: http://madie-qdm-elm-translation:${MADIE_QDM_ELM_TRANSLATION_PORT:-8084}/api/qdm
+      FHIR_ELM_TRANSLATOR_SERVICE_URL: http://madie-fhir-elm-translator:${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}/api/fhir
+      FHIR_SERVICES_URL: http://madie-fhir-service:${MADIE_FHIR_SERVICE_PORT:-8085}/api
+      VIRUS_SCAN_SERVICE_URL: http://virus-scan-service:${VIRUS_SCAN_SERVICE_PORT:-5000}
+      TERMINOLOGY_SERVICE_URL: http://terminology-service:${TERMINOLOGY_SERVICE_PORT:-8081}/api
+      SERVICE_CONFIG_JSON_URL: http://madie-root:${MADIE_ROOT_PORT:-9000}/env-config/serviceConfig.json
+      QDM_SERVICE_URL: http://madie-qdm-service:${MADIE_QDM_SERVICE_PORT:-8086}/api
+      CQL_TEMPLATE_QICORE411_URL: http://support-data:${SUPPORT_DATA_PORT:-8660}/QICore411_CQLTemplate.txt
+      CQL_TEMPLATE_QICORE600_URL: http://support-data:${SUPPORT_DATA_PORT:-8660}/QICore600_CQLTemplate.txt
+      CQL_TEMPLATE_QDM56_URL: http://support-data:${SUPPORT_DATA_PORT:-8660}/QDM56_CQLTemplate.txt
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${MEASURE_SERVICE_PORT:-8080}
+
+  cql-library-service:
+    <<: *java-base
+    container_name: madie-cql-library-service
+    ports:
+      - "${CQL_LIBRARY_SERVICE_PORT:-8082}:${CQL_LIBRARY_SERVICE_PORT:-8082}"
+    volumes:
+      - ./services/cql-library-service:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    restart: on-failure
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      <<: [*java-common-env, *mongo-spring-env]
+      QDM_ELM_TRANSLATOR_SERVICE_URL: http://madie-qdm-elm-translation:${MADIE_QDM_ELM_TRANSLATION_PORT:-8084}/api/qdm
+      FHIR_ELM_TRANSLATOR_SERVICE_URL: http://madie-fhir-elm-translator:${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}/api/fhir
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${CQL_LIBRARY_SERVICE_PORT:-8082}
+
+  madie-fhir-service:
+    <<: *java-base
+    container_name: madie-fhir-service
+    ports:
+      - "${MADIE_FHIR_SERVICE_PORT:-8085}:${MADIE_FHIR_SERVICE_PORT:-8085}"
+    volumes:
+      - ./services/madie-fhir-service:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+      - fhir-cache:/root/.fhir
+    depends_on:
+      madie-fhir-elm-translator:
+        condition: service_started
+      cql-library-service:
+        condition: service_started
+      madie-root:
+        condition: service_healthy
+    environment:
+      <<: [*java-common-env, *mongo-spring-env]
+      FHIR_ELM_TRANSLATOR_SERVICE_URL: http://madie-fhir-elm-translator:${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}/api/fhir
+      CQL_LIBRARY_SERVICE_URL: http://cql-library-service:${CQL_LIBRARY_SERVICE_PORT:-8082}/api
+      SERVICE_CONFIG_JSON_URL: http://madie-root:${MADIE_ROOT_PORT:-9000}/env-config/serviceConfig.json
+      VSAC_API_KEY: ${VSAC_API_KEY:-your-vsac-api-key}
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${MADIE_FHIR_SERVICE_PORT:-8085}
+
+  terminology-service:
+    <<: *java-base
+    container_name: madie-terminology-service
+    ports:
+      - "${TERMINOLOGY_SERVICE_PORT:-8081}:${TERMINOLOGY_SERVICE_PORT:-8081}"
+    volumes:
+      - ./services/terminology-service:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    restart: on-failure
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      <<: [*java-common-env, *mongo-spring-env]
+      CODE_SYSTEM_ENTRY_URL: http://support-data:${SUPPORT_DATA_PORT:-8660}/code-system-entry.json
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${TERMINOLOGY_SERVICE_PORT:-8081}
+
+  madie-qdm-service:
+    <<: *java-base
+    container_name: madie-qdm-service
+    ports:
+      - "${MADIE_QDM_SERVICE_PORT:-8086}:${MADIE_QDM_SERVICE_PORT:-8086}"
+    volumes:
+      - ./services/madie-qdm-service:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      <<: [*java-common-env, *mongo-spring-env]
+      QDM_ELM_TRANSLATOR_SERVICE_URL: http://madie-qdm-elm-translation:${MADIE_QDM_ELM_TRANSLATION_PORT:-8084}/api/qdm
+      QRDA_SERVICE_URL: http://qrda-export-service:80/api
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${MADIE_QDM_SERVICE_PORT:-8086}
+
+  madie-user-service:
+    <<: *java-base
+    container_name: madie-user-service
+    ports:
+      - "${MADIE_USER_SERVICE_PORT:-8088}:${MADIE_USER_SERVICE_PORT:-8088}"
+    volumes:
+      - ./services/madie-user-service:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      <<: *java-common-env
+      SPRING_DATA_MONGODB_URI: mongodb://${MONGO_INITDB_ROOT_USERNAME:-root}:${MONGO_INITDB_ROOT_PASSWORD:-E5press0}@mongodb:27017/${MONGO_DB_NAME:-madie}?authSource=admin
+      HARP_CLIENT_ID: ${HARP_CLIENT_ID:-your-harp-client-id}
+      HARP_LOCAL_OVERRIDE_ID: ${HARP_LOCAL_OVERRIDE_ID:-}
+      HARP_SECRET: ${HARP_SECRET:-your-harp-secret}
+      MONGO_DBUSER: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_DBPASS: ${MONGO_INITDB_ROOT_PASSWORD:-E5press0}
+      MONGO_HOST: mongodb:27017
+      MONGO_DATABASE: ${MONGO_DB_NAME:-madie}
+      MONGO_OPTIONS: "${MONGO_OPTIONS:-?authSource=admin&maxPoolSize=50&connectTimeoutMS=2000&serverSelectionTimeoutMS=2000}"
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${MADIE_USER_SERVICE_PORT:-8088}
+
+  madie-fhir-elm-translator:
+    <<: *java-base
+    container_name: madie-fhir-elm-translator
+    ports:
+      - "${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}:${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}"
+    volumes:
+      - ./services/madie-fhir-elm-translator:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    environment:
+      <<: *java-common-env
+      CQL_LIBRARY_SERVICE_URL: http://cql-library-service:${CQL_LIBRARY_SERVICE_PORT:-8082}/api
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}
+
+  madie-qdm-elm-translation:
+    <<: *java-base
+    container_name: madie-qdm-elm-translation
+    ports:
+      - "${MADIE_QDM_ELM_TRANSLATION_PORT:-8084}:${MADIE_QDM_ELM_TRANSLATION_PORT:-8084}"
+    volumes:
+      - ./services/madie-qdm-elm-translation:/app
+      - maven-repo:/root/.m2
+      - ~/.m2/settings.xml:/root/.m2/settings.xml:ro
+    environment:
+      <<: *java-common-env
+      CQL_LIBRARY_SERVICE_URL: http://cql-library-service:${CQL_LIBRARY_SERVICE_PORT:-8082}/api
+    command: mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=${MADIE_QDM_ELM_TRANSLATION_PORT:-8084}
+
+  # ─── Node / Ruby Services ──────────────────────────────────────────────────
+
+  virus-scan-service:
+    <<: *node-service
+    container_name: madie-virus-scan-service
+    ports:
+      - "${VIRUS_SCAN_SERVICE_PORT:-5000}:${VIRUS_SCAN_SERVICE_PORT:-5000}"
+    volumes:
+      - ./services/virus-scan-service:/app
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev"
+
+  excel-export:
+    <<: *node-service
+    container_name: madie-excel-export
+    ports:
+      - "${EXCEL_EXPORT_PORT:-3000}:${EXCEL_EXPORT_PORT:-3000}"
+    volumes:
+      - ./services/excel-export:/app
+      - /app/node_modules
+    environment:
+      <<: *node-env
+      ISSUER: ${OKTA_ISSUER:-https://your-org.okta.com/oauth2/default}
+      CLIENT_ID: ${OKTA_CLIENT_ID:-your-client-id}
+    command: sh -c "npm install && npm run dev"
+
+  qrda-export-service:
+    build:
+      context: ./services/qrda-export-service
+    container_name: madie-qrda-export-service
+    ports:
+      - "${QRDA_EXPORT_SERVICE_PORT:-8089}:80"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks: [madie]
+    environment:
+      MONGO_DBUSER: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_DBPASS: ${MONGO_INITDB_ROOT_PASSWORD:-E5press0}
+      MONGO_HOST: mongodb:27017
+      MONGO_DATABASE: ${MONGO_DB_NAME:-madie}
+      MONGO_OPTIONS: "${MONGO_OPTIONS:-?authSource=admin&maxPoolSize=50&connectTimeoutMS=2000&serverSelectionTimeoutMS=2000}"
+
+  # ─── Standalone ────────────────────────────────────────────────────────────
+
+  support-data:
+    <<: *node-service
+    container_name: madie-support-data
+    ports:
+      - "${SUPPORT_DATA_PORT:-8660}:${SUPPORT_DATA_PORT:-8660}"
+    volumes:
+      - ./standalone/support-data/madie:/app
+    command: npx http-server . -p ${SUPPORT_DATA_PORT:-8660} -c-1 --cors
+
+networks:
+  madie:
+    driver: bridge
+
+volumes:
+  maven-repo:
+  bundle-cache:
+  fhir-cache:
