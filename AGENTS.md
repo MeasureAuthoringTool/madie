@@ -9,7 +9,7 @@ madie.sh              # Main CLI — start, stop, kill, status, logs, help
 setup-madie.sh        # Clone/update all MADiE repos
 docker-compose.yml    # Full Docker stack (20 containers)
 .env.example          # Environment variable template → copy to .env
-data/init-mongo.js    # MongoDB initialization (users, permissions)
+data/init-mongo.js    # MongoDB initialization (users, permissions, seeding initial organizations)
 frontends/            # 7 single-spa micro-frontend repos (cloned here)
 services/             # 11 backend microservice repos (cloned here)
 standalone/           # Static file server repos (cloned here)
