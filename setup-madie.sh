@@ -8,6 +8,8 @@
 #   ./setup-madie.sh frontends    # Clone or update only frontend repos
 #   ./setup-madie.sh services     # Clone or update only microservice repos
 #   ./setup-madie.sh libs         # Clone or update only shared library repos
+#   ./setup-madie.sh --https         # Use HTTPS URLs instead of SSH
+#   GIT_PROTOCOL=https ./setup-madie.sh   # Alternative: env var
 #
 # On first run, repos are cloned into categorized subdirectories.
 # On subsequent runs, each repo is updated with the latest from its default branch.
@@ -24,10 +26,10 @@ FRONTENDS=(
   "madie-root:develop"
   "madie-layout:develop"
   "madie-auth:develop"
-  "madie-editor:develop"
   "madie-measure:develop"
   "madie-cql-library:develop"
   "madie-util:develop"
+  "madie-admin:develop"
 )
 
 SERVICES_DIR="$BASE_DIR/services"
@@ -58,6 +60,8 @@ LIBS=(
   "madie-java-models:develop"
   "madie-rest-commons:develop"
   "madie-translator-commons:develop"
+  "packaging-utility:develop"
+  "madie-editor:develop"
 )
 
 # ─── Colors & helpers ─────────────────────────────────────────────────────────
@@ -73,6 +77,27 @@ success() { echo -e "${GREEN}[OK]${NC}    $*"; }
 warn()    { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error()   { echo -e "${RED}[ERR]${NC}   $*"; }
 
+# ─── Clone protocol (SSH by default; use --https flag or GIT_PROTOCOL=https) ──
+
+USE_HTTPS=false
+for arg in "$@"; do
+  case "$arg" in
+    --https) USE_HTTPS=true ;;
+  esac
+done
+if [ "${GIT_PROTOCOL:-}" = "https" ]; then
+  USE_HTTPS=true
+fi
+
+get_clone_url() {
+  local repo="$1"
+  if $USE_HTTPS; then
+    echo "https://github.com/${ORG}/${repo}.git"
+  else
+    echo "git@github.com:${ORG}/${repo}.git"
+  fi
+}
+
 # ─── Core logic ──────────────────────────────────────────────────────────────
 
 clone_or_update() {
@@ -80,7 +105,8 @@ clone_or_update() {
   local branch="$2"
   local target_dir="$3"
   local repo_path="$target_dir/$repo"
-  local clone_url="git@github.com:${ORG}/${repo}.git"
+  local clone_url
+  clone_url="$(get_clone_url "$repo")"
 
   if [ -d "$repo_path/.git" ]; then
     info "Updating ${BOLD}$repo${NC} (branch: $branch)"
@@ -146,7 +172,13 @@ echo -e "${NC}"
 # Ensure data directory exists for Docker volume mounts
 mkdir -p "$BASE_DIR/data"
 
-filter="${1:-all}"
+filter="all"
+for arg in "$@"; do
+  case "$arg" in
+    --https) ;; # already handled above
+    *) filter="$arg" ;;
+  esac
+done
 
 do_frontends=false
 do_services=false
@@ -174,7 +206,7 @@ case "$filter" in
     ;;
   *)
     error "Unknown group: $filter"
-    echo "Usage: $0 [all|frontends|services|standalone|libs]"
+    echo "Usage: $0 [all|frontends|services|standalone|libs] [--https]"
     exit 1
     ;;
 esac

@@ -9,6 +9,7 @@
 !madie.sh
 !setup-madie.sh
 !docker-compose.yml
+docker-compose.override.yml
 !.env.example
 !README.md
 
@@ -23,3 +24,4 @@ data/*
 .DS_Store
 logs/
 temp/
+plans/

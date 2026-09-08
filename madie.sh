@@ -66,6 +66,7 @@ export_service_urls() {
   export FHIR_ELM_TRANSLATOR_SERVICE_URL="http://${host}:${MADIE_FHIR_ELM_TRANSLATOR_PORT:-8083}/api/fhir"
   export FHIR_SERVICES_URL="http://${host}:${MADIE_FHIR_SERVICE_PORT:-8085}/api"
   export VIRUS_SCAN_SERVICE_URL="http://${host}:${VIRUS_SCAN_SERVICE_PORT:-5000}"
+  export EXCEL_EXPORT_SERVICE="http://${host}:${EXCEL_EXPORT_PORT:-3000}/api"
   export TERMINOLOGY_SERVICE_URL="http://${host}:${TERMINOLOGY_SERVICE_PORT:-8081}/api"
   export SERVICE_CONFIG_JSON_URL="http://${host}:${MADIE_ROOT_PORT:-9000}/env-config/serviceConfig.json"
   export QDM_SERVICE_URL="http://${host}:${MADIE_QDM_SERVICE_PORT:-8086}/api"
@@ -242,10 +243,10 @@ kill_by_ports() {
     "${MADIE_ROOT_PORT:-9000}:madie-root"
     "${MADIE_LAYOUT_PORT:-8500}:madie-layout"
     "${MADIE_AUTH_PORT:-8502}:madie-auth"
-    "${MADIE_EDITOR_PORT:-8501}:madie-editor"
     "${MADIE_MEASURE_PORT:-8505}:madie-measure"
     "${MADIE_CQL_LIBRARY_PORT:-8507}:madie-cql-library"
     "${MADIE_UTIL_PORT:-8508}:madie-util"
+    "${MADIE_ADMIN_PORT:-8509}:madie-admin"
     "${MEASURE_SERVICE_PORT:-8080}:measure-service"
     "${TERMINOLOGY_SERVICE_PORT:-8081}:terminology-service"
     "${CQL_LIBRARY_SERVICE_PORT:-8082}:cql-library-service"
@@ -411,10 +412,10 @@ start_frontends_dev() {
   start_process "madie-root"        "$BASE_DIR/frontends/madie-root"        "npm start"  "${MADIE_ROOT_PORT:-9000}"        "frontends"
   start_process "madie-layout"      "$BASE_DIR/frontends/madie-layout"      "npm start"  "${MADIE_LAYOUT_PORT:-8500}"      "frontends"
   start_process "madie-auth"        "$BASE_DIR/frontends/madie-auth"        "npm start"  "${MADIE_AUTH_PORT:-8502}"        "frontends"
-  start_process "madie-editor"      "$BASE_DIR/frontends/madie-editor"      "npm start"  "${MADIE_EDITOR_PORT:-8501}"      "frontends"
   start_process "madie-measure"     "$BASE_DIR/frontends/madie-measure"     "npm start"  "${MADIE_MEASURE_PORT:-8505}"     "frontends"
   start_process "madie-cql-library" "$BASE_DIR/frontends/madie-cql-library" "npm start"  "${MADIE_CQL_LIBRARY_PORT:-8507}" "frontends"
   start_process "madie-util"        "$BASE_DIR/frontends/madie-util"        "npm start"  "${MADIE_UTIL_PORT:-8508}"        "frontends"
+  start_process "madie-admin"       "$BASE_DIR/frontends/madie-admin"       "npm start"  "${MADIE_ADMIN_PORT:-8509}"       "frontends"
 }
 
 start_frontends_dist() {
@@ -424,10 +425,10 @@ start_frontends_dist() {
   start_process "madie-root"        "$BASE_DIR/frontends/madie-root"        "${cmd_tpl} ${MADIE_ROOT_PORT:-9000} -c-1"        "${MADIE_ROOT_PORT:-9000}"        "frontends"
   start_process "madie-layout"      "$BASE_DIR/frontends/madie-layout"      "${cmd_tpl} ${MADIE_LAYOUT_PORT:-8500} -c-1"      "${MADIE_LAYOUT_PORT:-8500}"      "frontends"
   start_process "madie-auth"        "$BASE_DIR/frontends/madie-auth"        "${cmd_tpl} ${MADIE_AUTH_PORT:-8502} -c-1"        "${MADIE_AUTH_PORT:-8502}"        "frontends"
-  start_process "madie-editor"      "$BASE_DIR/frontends/madie-editor"      "${cmd_tpl} ${MADIE_EDITOR_PORT:-8501} -c-1"      "${MADIE_EDITOR_PORT:-8501}"      "frontends"
   start_process "madie-measure"     "$BASE_DIR/frontends/madie-measure"     "${cmd_tpl} ${MADIE_MEASURE_PORT:-8505} -c-1"     "${MADIE_MEASURE_PORT:-8505}"     "frontends"
   start_process "madie-cql-library" "$BASE_DIR/frontends/madie-cql-library" "${cmd_tpl} ${MADIE_CQL_LIBRARY_PORT:-8507} -c-1" "${MADIE_CQL_LIBRARY_PORT:-8507}" "frontends"
   start_process "madie-util"        "$BASE_DIR/frontends/madie-util"        "${cmd_tpl} ${MADIE_UTIL_PORT:-8508} -c-1"        "${MADIE_UTIL_PORT:-8508}"        "frontends"
+  start_process "madie-admin"       "$BASE_DIR/frontends/madie-admin"       "${cmd_tpl} ${MADIE_ADMIN_PORT:-8509} -c-1"       "${MADIE_ADMIN_PORT:-8509}"       "frontends"
 }
 
 start_services_dev() {

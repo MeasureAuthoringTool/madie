@@ -21,6 +21,17 @@ The subdirectories (`frontends/`, `services/`, `standalone/`, `libs/`) contain c
 
 ---
 
+## Planning Documents
+
+All implementation plans must be stored in the root `plans/` directory. Do not place plans in
+individual service repositories or external session directories. Use a descriptive kebab-case
+filename, such as `plans/proposed-structured-include-parsing-refactor.md`.
+
+The `plans/` directory is intentionally gitignored; plans are local project artifacts unless a user
+explicitly requests that a plan be committed.
+
+---
+
 ## CLI Reference — madie.sh
 
 All runtime operations go through `./madie.sh`:
